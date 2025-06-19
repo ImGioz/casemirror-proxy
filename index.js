@@ -1,63 +1,97 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import cors from 'cors';
+import crypto from 'crypto';
 
 const app = express();
 
 app.use(cors({
-  origin: '*', // Или укажи домен твоего сайта
+  origin: '*',
 }));
 
-// Основной прокси для mew.php с заголовками
+function toNumbers(hexStr) {
+  const arr = [];
+  hexStr.replace(/(..)/g, (_, hex) => {
+    arr.push(parseInt(hex, 16));
+  });
+  return arr;
+}
+
+function toHex(byteArr) {
+  return byteArr.map(b => (b < 16 ? '0' : '') + b.toString(16)).join('').toLowerCase();
+}
+
+function slowAES_decrypt(cipherBytes, mode, keyBytes, ivBytes) {
+  if (mode !== 2) throw new Error('Unsupported mode: ' + mode);
+
+  const key = Buffer.from(keyBytes);
+  const iv = Buffer.from(ivBytes);
+  const encrypted = Buffer.from(cipherBytes);
+
+  const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv);
+  decipher.setAutoPadding(true);
+
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+  return decrypted;
+}
+
 app.get('/proxy', async (req, res) => {
   const amount = req.query.amount || '1';
-  const url = `https://casemirror.kesug.com/mew.php?amount=${amount}&i=1`;
+  const url1 = `https://casemirror.kesug.com/mew.php?amount=${amount}&i=1`;
 
   try {
-    const response = await fetch(url, {
+    // Первый запрос, получаем HTML с JS-защитой
+    const response1 = await fetch(url1, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36',
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'text/html',
         'Referer': 'https://casemirror.kesug.com/',
       }
     });
 
-    const data = await response.text();
+    const html = await response1.text();
 
-    // Пытаемся распарсить JSON, если сервер отдаёт его
-    try {
-      const json = JSON.parse(data);
-      res.json(json);
-    } catch {
-      // Если не JSON — отдаём как есть
-      res.send(data);
+    // Парсим a,b,c из JS
+    const regexA = /var a = toNumbers\("([0-9a-f]+)"\)/;
+    const regexB = /var b = toNumbers\("([0-9a-f]+)"\)/;
+    const regexC = /var c = toNumbers\("([0-9a-f]+)"\)/;
+
+    const matchA = html.match(regexA);
+    const matchB = html.match(regexB);
+    const matchC = html.match(regexC);
+
+    if (!matchA || !matchB || !matchC) {
+      return res.status(500).send('Failed to parse AES params');
     }
-  } catch (error) {
-    console.error('Error proxying mew.php:', error);
-    res.status(500).send('Proxy error');
-  }
-});
 
-// Проксируем aes.js со стороннего сервера
-app.get('/aes.js', async (req, res) => {
-  try {
-    const response = await fetch('https://casemirror.kesug.com/aes.js', {
+    const a = toNumbers(matchA[1]);
+    const b = toNumbers(matchB[1]);
+    const c = toNumbers(matchC[1]);
+
+    // Дешифруем
+    const decryptedBuffer = slowAES_decrypt(c, 2, a, b);
+    const cookieValue = toHex([...decryptedBuffer]);
+
+    // Второй запрос с cookie __test
+    const url2 = `https://casemirror.kesug.com/mew.php?amount=${amount}&i=2`;
+    const response2 = await fetch(url2, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36',
-        'Accept': 'application/javascript',
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json',
         'Referer': 'https://casemirror.kesug.com/',
+        'Cookie': `__test=${cookieValue}`
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch aes.js: ${response.statusText}`);
-    }
-    const js = await response.text();
-    res.set('Content-Type', 'application/javascript');
-    res.send(js);
+    const json = await response2.json();
+
+    res.json(json);
+
   } catch (error) {
-    console.error('Error proxying aes.js:', error);
-    res.status(500).send('Failed to fetch aes.js');
+    console.error(error);
+    res.status(500).send('Proxy error with AES decryption');
   }
 });
 
