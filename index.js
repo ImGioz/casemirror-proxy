@@ -1,8 +1,12 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ➕ Добавляем раздачу статических файлов из папки "public"
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/proxy', async (req, res) => {
   const { amount, i } = req.query;
@@ -13,13 +17,11 @@ app.get('/proxy', async (req, res) => {
 
   try {
     const targetUrl = `https://casemirror.kesug.com/mew.php?amount=${encodeURIComponent(amount)}&i=${encodeURIComponent(i)}`;
-
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0'
       }
     });
-
     const data = await response.text();
 
     res.set('Access-Control-Allow-Origin', '*');
