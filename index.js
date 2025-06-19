@@ -1,37 +1,39 @@
-const express = require('express');
-const fetch = require('node-fetch');
-const path = require('path');
+import express from 'express';
+import fetch from 'node-fetch';
+import cors from 'cors';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// ➕ Добавляем раздачу статических файлов из папки "public"
-app.use(express.static(path.join(__dirname, 'public')));
+// Разрешаем CORS с твоего основного сайта или открыто
+app.use(cors({
+  origin: '*', // лучше сюда указать URL твоего сайта, например: 'https://example.com'
+}));
 
 app.get('/proxy', async (req, res) => {
-  const { amount, i } = req.query;
-
-  if (!amount || !i) {
-    return res.status(400).send('Missing parameters');
-  }
+  const amount = req.query.amount || '1';
+  const url = `https://casemirror.kesug.com/mew.php?amount=${amount}&i=1`;
 
   try {
-    const targetUrl = `https://casemirror.kesug.com/mew.php?amount=${encodeURIComponent(amount)}&i=${encodeURIComponent(i)}`;
-    const response = await fetch(targetUrl, {
+    // Отправляем запрос к Infinity Free с куки (если нужно, можно добавить их здесь)
+    const response = await fetch(url, {
+      // Можно добавить заголовки, если сервер требует
       headers: {
-        'User-Agent': 'Mozilla/5.0'
+        // Пример: 'Cookie': 'some_cookie=value'
       }
     });
+
+    // Читаем текстовый ответ
     const data = await response.text();
 
-    res.set('Access-Control-Allow-Origin', '*');
+    // Отдаем ответ обратно фронтенду
     res.send(data);
   } catch (error) {
-    console.error('Proxy error:', error);
+    console.error('Error in proxy:', error);
     res.status(500).send('Proxy error');
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Proxy server running on port ${PORT}`);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Proxy server listening on port ${port}`);
 });
