@@ -4,32 +4,38 @@ import cors from 'cors';
 
 const app = express();
 
-// Разрешаем CORS с твоего основного сайта или открыто
 app.use(cors({
-  origin: '*', // лучше сюда указать URL твоего сайта, например: 'https://example.com'
+  origin: '*', // Или укажи домен твоего сайта
 }));
 
+// Основной прокси для mew.php
 app.get('/proxy', async (req, res) => {
   const amount = req.query.amount || '1';
   const url = `https://casemirror.kesug.com/mew.php?amount=${amount}&i=1`;
 
   try {
-    // Отправляем запрос к Infinity Free с куки (если нужно, можно добавить их здесь)
-    const response = await fetch(url, {
-      // Можно добавить заголовки, если сервер требует
-      headers: {
-        // Пример: 'Cookie': 'some_cookie=value'
-      }
-    });
-
-    // Читаем текстовый ответ
+    const response = await fetch(url);
     const data = await response.text();
-
-    // Отдаем ответ обратно фронтенду
     res.send(data);
   } catch (error) {
-    console.error('Error in proxy:', error);
+    console.error('Error proxying mew.php:', error);
     res.status(500).send('Proxy error');
+  }
+});
+
+// Проксируем aes.js со стороннего сервера
+app.get('/aes.js', async (req, res) => {
+  try {
+    const response = await fetch('https://casemirror.kesug.com/aes.js');
+    if (!response.ok) {
+      throw new Error(`Failed to fetch aes.js: ${response.statusText}`);
+    }
+    const js = await response.text();
+    res.set('Content-Type', 'application/javascript');
+    res.send(js);
+  } catch (error) {
+    console.error('Error proxying aes.js:', error);
+    res.status(500).send('Failed to fetch aes.js');
   }
 });
 
